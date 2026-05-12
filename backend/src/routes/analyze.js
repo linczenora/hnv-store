@@ -5,6 +5,44 @@ const https  = require('https');
 const { pool } = require('../db');
 const { authenticate } = require('../middleware/auth');
 
+// Thư viện đọc Word và Excel
+let mammoth, XLSX;
+try { mammoth = require('mammoth'); } catch(e) { console.warn('mammoth not installed'); }
+try { XLSX = require('xlsx'); } catch(e) { console.warn('xlsx not installed'); }
+
+// Extract text từ Word (.doc/.docx)
+async function extractWordText(filePath) {
+  if (!mammoth) throw new Error('Thư viện mammoth chưa cài');
+  const result = await mammoth.extractRawText({ path: filePath });
+  return result.value?.slice(0, 60000) || '';
+}
+
+// Extract text từ Excel (.xls/.xlsx)
+function extractExcelText(filePath) {
+  if (!XLSX) throw new Error('Thư viện xlsx chưa cài');
+  const wb = XLSX.readFile(filePath);
+  let text = '';
+  wb.SheetNames.forEach(sheetName => {
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_csv(ws);
+    text += `\n=== Sheet: ${sheetName} ===\n${rows}`;
+  });
+  return text.slice(0, 60000);
+}
+
+// Extract text từ PowerPoint (.ppt/.pptx) — lấy text từ XML
+function extractPptText(filePath) {
+  try {
+    if (!XLSX) throw new Error('Thư viện xlsx chưa cài');
+    const wb = XLSX.readFile(filePath);
+    // XLSX có thể đọc pptx như zip
+    let text = `[Tệp PowerPoint: ${filePath.split('/').pop()}]\nKhông thể trích xuất nội dung chi tiết từ file PowerPoint.`;
+    return text;
+  } catch(e) {
+    return `[Tệp PowerPoint — không trích xuất được text]`;
+  }
+}
+
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL   = 'gemini-2.5-flash';
 
@@ -161,9 +199,26 @@ router.post('/', authenticate, async (req, res) => {
         { text: prompt },
       ];
 
+    } else if (['doc', 'docx'].includes(ft)) {
+      // Word — extract text rồi gửi
+      const content = await extractWordText(filePath);
+      if (!content.trim()) return res.status(400).json({ error: 'Không đọc được nội dung file Word' });
+      parts = [{ text: `${prompt}\n\n--- Nội dung tài liệu Word ---\n${content}` }];
+
+    } else if (['xls', 'xlsx'].includes(ft)) {
+      // Excel — extract text rồi gửi
+      const content = extractExcelText(filePath);
+      if (!content.trim()) return res.status(400).json({ error: 'Không đọc được nội dung file Excel' });
+      parts = [{ text: `${prompt}\n\n--- Dữ liệu bảng tính Excel ---\n${content}` }];
+
+    } else if (['ppt', 'pptx'].includes(ft)) {
+      // PowerPoint — thông báo hạn chế
+      const content = extractPptText(filePath);
+      parts = [{ text: `${prompt}\n\n${content}` }];
+
     } else {
       return res.status(400).json({
-        error: `Định dạng .${ft} chưa được hỗ trợ. Hỗ trợ: PDF, ảnh (PNG/JPG), TXT, CSV, MD`
+        error: `Định dạng .${ft} chưa được hỗ trợ. Hỗ trợ: PDF, Word, Excel, ảnh (PNG/JPG), TXT, CSV`
       });
     }
 

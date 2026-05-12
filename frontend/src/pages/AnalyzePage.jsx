@@ -5,6 +5,10 @@ import api from '../utils/api';
 // ── File type helpers ────────────────────────────────────────────────────────
 const SUPPORTED_TYPES = {
   pdf:  { label: 'PDF',  icon: '📄', color: '#b84020', bg: '#fff0ec' },
+  doc:  { label: 'DOC',  icon: '📝', color: '#1d5fa5', bg: '#eff6ff' },
+  docx: { label: 'DOCX', icon: '📝', color: '#1d5fa5', bg: '#eff6ff' },
+  xls:  { label: 'XLS',  icon: '📊', color: '#166534', bg: '#f0fdf4' },
+  xlsx: { label: 'XLSX', icon: '📊', color: '#166534', bg: '#f0fdf4' },
   png:  { label: 'PNG',  icon: '🖼', color: '#0891b2', bg: '#ecfeff' },
   jpg:  { label: 'JPG',  icon: '🖼', color: '#0891b2', bg: '#ecfeff' },
   jpeg: { label: 'JPG',  icon: '🖼', color: '#0891b2', bg: '#ecfeff' },
@@ -206,7 +210,7 @@ export default function AnalyzePage() {
 
           {/* Support note */}
           <div style={S.supportNote}>
-            Hỗ trợ: PDF · PNG · JPG · TXT · CSV · MD
+            Hỗ trợ: PDF · Word · Excel · PNG · JPG · TXT · CSV · MD
           </div>
 
           {/* Document list */}
