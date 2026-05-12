@@ -1,0 +1,40 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Mobile: reduce page padding */
+@media (max-width: 767px) {
+  /* Trang chính */
+  [class*="page"] > div:first-child,
+  .mobile-page { padding: 16px !important; }
+
+  /* Tables scroll ngang */
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Modal full width */
+  [style*="maxWidth: 560"],
+  [style*="maxWidth: 620"],
+  [style*="maxWidth: 680"] {
+    max-width: calc(100vw - 24px) !important;
+    margin: 12px !important;
+  }
+
+  /* Toolbar wrap */
+  [style*="display: flex"][style*="flexWrap"] {
+    flex-wrap: wrap !important;
+  }
+
+  /* Filter panel stack */
+  [style*="gridTemplateColumns"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Smooth scroll */
+html { scroll-behavior: smooth; }
+
+/* Touch target minimum */
+button, a { min-height: 36px; }
