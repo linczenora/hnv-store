@@ -15,6 +15,11 @@ const pool = new Pool(
       }
 );
 
+// Set UTF-8 encoding on every new connection
+pool.on('connect', (client) => {
+  client.query("SET client_encoding = 'UTF8'");
+});
+
 pool.on('error', (err) => console.error('DB pool error:', err));
 
 module.exports = { pool };
