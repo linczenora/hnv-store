@@ -17,7 +17,7 @@ const BOTTOM_NAV = [
   { to: '/__menu',   label: 'Thêm',       icon: '☰',  isMenu: true },
 ];
 
-function useIsMobile() {
+export function useIsMobile() {
   const [mobile, setMobile] = useState(window.innerWidth < 768);
   useEffect(() => {
     const h = () => setMobile(window.innerWidth < 768);

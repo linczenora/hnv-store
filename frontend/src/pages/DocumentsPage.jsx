@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { docsAPI, foldersAPI, catalogsAPI, downloadBlob } from '../utils/api';
 import ProvinceSelect from '../components/ProvinceSelect';
+import { useIsMobile } from '../components/Layout';
 import { useAuth, useIsEditor } from '../context/AuthContext';
 import { useLocation } from 'react-router-dom';
 import UploadModal from '../components/UploadModal';
@@ -26,6 +27,7 @@ function formatBytes(b){ return b<1024*1024?(b/1024).toFixed(0)+' KB':(b/1024/10
 
 export default function DocumentsPage() {
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const isEditor = useIsEditor();
   const location = useLocation();
   const highlightId    = location.state?.highlightId;
@@ -226,7 +228,41 @@ export default function DocumentsPage() {
         {loading?'Đang tải...':`${total} tài liệu`}
       </div>
 
-      {/* ── Table ── */}
+      {/* ── Table / Card list ── */}
+      {isMobile ? (
+        <div style={{display:'flex', flexDirection:'column', gap:10}}>
+          {loading ? (
+            <div style={S.empty}>Đang tải...</div>
+          ) : docs.length===0 ? (
+            <div style={S.empty}>Không tìm thấy tài liệu nào</div>
+          ) : docs.map(doc => {
+            const tc = TYPE_COLORS[doc.file_type]||TYPE_COLORS.default;
+            const ac = ACCESS_COLORS[doc.access_level]||{};
+            return (
+              <div key={doc.id} style={{background:'#fff',border:'1px solid #e8e8e6',borderRadius:10,padding:'14px 16px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+                  <span style={{...S.typeTag,background:tc.bg,color:tc.color}}>{doc.file_type?.toUpperCase()}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{...S.docTitle,fontSize:14}}>{doc.title}</div>
+                    {doc.description&&<div style={S.docDesc}>{doc.description}</div>}
+                  </div>
+                </div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+                  {doc.folder_name&&<span style={S.metaChip}>📁 {doc.folder_name}</span>}
+                  {doc.investor_name&&<span style={S.metaChip}>🏢 {doc.investor_name}</span>}
+                  {doc.province&&<span style={S.metaChip}>📍 {doc.province}</span>}
+                  <span style={{...S.accessTag,...ac}}>{ACCESS_LABELS[doc.access_level]}</span>
+                </div>
+                <div style={{display:'flex',gap:6}}>
+                  <button style={{...S.iconBtn,flex:1,border:'1px solid #e0e0de',borderRadius:8,fontSize:13}} onClick={()=>setViewDoc(doc)}>👁 Xem</button>
+                  <button style={{...S.iconBtn,flex:1,border:'1px solid #e0e0de',borderRadius:8,fontSize:13}} onClick={()=>handleDownload(doc)}>⬇ Tải</button>
+                  {isEditor&&<button style={{...S.iconBtn,flex:1,border:'1px solid #e0e0de',borderRadius:8,fontSize:13}} onClick={()=>setEditDoc(doc)}>✏️ Sửa</button>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
       <div style={S.tableWrap}>
         <table style={S.table}>
           <thead>
@@ -280,6 +316,8 @@ export default function DocumentsPage() {
           </tbody>
         </table>
       </div>
+
+      )}
 
       {total>25&&(
         <div style={S.pagination}>

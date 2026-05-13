@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { docsAPI, foldersAPI } from '../utils/api';
 import api from '../utils/api';
+import { useIsMobile } from '../components/Layout';
 
 // ── File type helpers ────────────────────────────────────────────────────────
 const SUPPORTED_TYPES = {
@@ -114,6 +115,7 @@ function MarkdownRenderer({ text }) {
 
 // ══════════════════════════════════════════════════════════════════════════════
 export default function AnalyzePage() {
+  const isMobile = useIsMobile();
   const [docs,        setDocs]        = useState([]);
   const [folders,     setFolders]     = useState([]);
   const [search,      setSearch]      = useState('');
@@ -189,7 +191,7 @@ export default function AnalyzePage() {
       <div style={S.layout}>
 
         {/* ── LEFT: Chọn tài liệu ── */}
-        <div style={S.leftPanel}>
+        <div style={{...S.leftPanel, width: isMobile ? '100%' : '280px', overflowY: isMobile ? 'visible' : 'auto'}}>
           <div style={S.panelTitle}>
             <span>📂</span> Chọn tài liệu
           </div>
@@ -239,12 +241,12 @@ export default function AnalyzePage() {
         </div>
 
         {/* ── RIGHT: Cấu hình & Kết quả ── */}
-        <div style={S.rightPanel}>
+        <div style={{...S.rightPanel, overflowY: isMobile ? 'visible' : 'auto'}}>
 
           {/* Chế độ phân tích */}
           <div style={S.section}>
             <div style={S.sectionTitle}>🎯 Chọn chế độ phân tích</div>
-            <div style={S.modeGrid}>
+            <div style={{...S.modeGrid, gridTemplateColumns: isMobile ? 'repeat(3,1fr)' : 'repeat(5,1fr)'}}>
               {MODES.map(m => (
                 <div key={m.key}
                   style={{ ...S.modeCard, ...(mode === m.key ? S.modeCardSelected : {}) }}

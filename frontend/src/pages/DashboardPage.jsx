@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useIsMobile } from '../components/Layout';
 import { activityAPI, docsAPI, statsAPI } from '../utils/api';
 import { formatDistanceToNow } from 'date-fns';
 import { vi } from 'date-fns/locale';
@@ -40,7 +41,7 @@ function DateRangeFilter({ value, onChange }) {
   };
 
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+    <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
       {[['7d','7 ngày'],['30d','30 ngày'],['3m','3 tháng'],['1y','1 năm'],['custom','Tuỳ chọn']].map(([k,label]) => (
         <button key={k}
           style={{ padding:'4px 10px', borderRadius:20, border:'1px solid #e0e0de', fontSize:12, cursor:'pointer',
@@ -63,6 +64,7 @@ function DateRangeFilter({ value, onChange }) {
 
 export default function DashboardPage() {
   const { user }  = useAuth();
+  const isMobile = useIsMobile();
   const navigate  = useNavigate();
   const [stats,       setStats]      = useState(null);
   const [activity,    setActivity]   = useState([]);
@@ -128,15 +130,15 @@ export default function DashboardPage() {
             <div style={S.aiWidgetSub}>Hỏi bằng ngôn ngữ tự nhiên, AI tìm tài liệu cho bạn</div>
           </div>
         </div>
-        <div style={S.aiWidgetInput}>
+        {!isMobile && <div style={S.aiWidgetInput}>
           <span style={{color:'#aaa',fontSize:13}}>VD: "hợp đồng lao động nhân sự", "nghị định mua sắm"...</span>
           <span style={S.aiWidgetBtn}>🔎 Tìm ngay</span>
-        </div>
+        </div>}
       </div>
 
       {showAISearch && <AISearchModal onClose={() => setShowAISearch(false)} />}
       {/* ── Header ── */}
-      <div style={S.topRow}>
+      <div style={{...S.topRow, flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 10 : 0}}>
         <div>
           <h1 style={S.greeting}>Xin chào, {user?.name?.split(' ').pop() || 'bạn'} 👋</h1>
           <p style={S.sub}>Đây là tổng quan hệ thống tài liệu nội bộ</p>
@@ -146,7 +148,7 @@ export default function DashboardPage() {
 
       {/* ── Stats cards ── */}
       {stats && (
-        <div style={S.statsRow}>
+        <div style={{...S.statsRow, gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)'}}>
           {[
             { icon:'📄', label:'Tổng tài liệu',    value: stats.total_docs,         bg:'#f0f4ff' },
             { icon:'👥', label:'Người dùng',        value: stats.total_users,        bg:'#f0fdf4' },
@@ -164,7 +166,7 @@ export default function DashboardPage() {
 
       {/* ── Charts row ── */}
       {user?.role === 'admin' && (
-        <div style={S.chartsRow}>
+        <div style={{...S.chartsRow, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr'}}>
 
           {/* Biểu đồ tròn */}
           <div style={S.chartCard}>
@@ -219,7 +221,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── Recent docs + Activity ── */}
-      <div style={S.bottomRow}>
+      <div style={{...S.bottomRow, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr'}}>
         <div style={S.panel}>
           <div style={S.panelHeader}>
             <span style={S.panelTitle}>Tài liệu gần đây</span>
