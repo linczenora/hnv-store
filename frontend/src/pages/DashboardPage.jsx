@@ -5,6 +5,7 @@ import { vi } from 'date-fns/locale';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import AISearchModal from '../components/AISearchModal';
+import AppTour from '../components/AppTour';
 import { PieChart, Pie, Cell, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 
 const ACTION_ICONS  = { upload:'⬆', download:'⬇', view:'👁', edit:'✏️', delete:'🗑', share:'🔗' };
@@ -71,6 +72,7 @@ export default function DashboardPage() {
   const [pieRange,    setPieRange]   = useState(getPreset('30d'));
   const [barRange,    setBarRange]   = useState(getPreset('30d'));
   const [showAISearch, setShowAISearch] = useState(false);
+  const [showTour, setShowTour] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -106,8 +108,19 @@ export default function DashboardPage() {
 
   return (
     <div style={S.page}>
+      {/* ── Tour controls ── */}
+      <div style={S.tourBar}>
+        <button style={S.tourBtn} onClick={() => setShowTour(true)}>
+          ▶ Xem hướng dẫn
+        </button>
+      </div>
+
+      {/* AppTour */}
+      {!showTour && <AppTour autoStart={true} onClose={() => {}} />}
+      {showTour && <AppTour key={Date.now()} run={true} onClose={() => setShowTour(false)} />}
+
       {/* ── AI Search Widget ── */}
-      <div style={S.aiWidget} onClick={() => setShowAISearch(true)}>
+      <div data-tour="ai-search" style={S.aiWidget} onClick={() => setShowAISearch(true)}>
         <div style={S.aiWidgetLeft}>
           <span style={S.aiWidgetIcon}>✨</span>
           <div>
@@ -257,6 +270,8 @@ export default function DashboardPage() {
 }
 
 const S = {
+  tourBar:{ display:'flex', justifyContent:'flex-end', marginBottom:12, gap:8 },
+  tourBtn:{ padding:'7px 14px', background:'#fff', border:'1px solid #e0e0de', borderRadius:8, fontSize:12, fontWeight:500, color:'#555', cursor:'pointer', display:'flex', alignItems:'center', gap:6 },
   aiWidget:{ display:'flex',flexDirection:'column',gap:12,background:'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)',borderRadius:14,padding:'18px 24px',marginBottom:24,cursor:'pointer',transition:'transform .15s,box-shadow .15s',boxShadow:'0 4px 20px rgba(99,102,241,0.3)' },
   aiWidgetLeft:{ display:'flex',alignItems:'center',gap:12 },
   aiWidgetIcon:{ fontSize:28,flexShrink:0 },

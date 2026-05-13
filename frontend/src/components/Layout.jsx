@@ -60,12 +60,12 @@ export default function Layout({ children }) {
       <nav style={S.nav}>
         <div style={S.navLabel}>ĐIỀU HƯỚNG</div>
         {[
-          { to:'/', label:'Tổng quan', icon:'⊞', exact:true },
-          { to:'/documents', label:'Tài liệu', icon:'📄' },
-          { to:'/analyze',   label:'Phân tích AI', icon:'🤖' },
-          { to:'/report',    label:'Thống kê báo cáo', icon:'📊' },
-        ].map(({ to, label, icon, exact }) => (
-          <NavLink key={to} to={to} end={exact}
+          { to:'/', label:'Tổng quan', icon:'⊞', exact:true, tour:'nav-home' },
+          { to:'/documents', label:'Tài liệu', icon:'📄', tour:'nav-documents' },
+          { to:'/analyze',   label:'Phân tích AI', icon:'🤖', tour:'nav-analyze' },
+          { to:'/report',    label:'Thống kê báo cáo', icon:'📊', tour:'nav-report' },
+        ].map(({ to, label, icon, exact, tour }) => (
+          <NavLink key={to} to={to} end={exact} data-tour={tour}
             style={({ isActive }) => ({ ...S.navItem, ...(isActive ? S.navActive : {}) })}>
             <span style={S.navIcon}>{icon}</span> {label}
           </NavLink>
@@ -73,7 +73,7 @@ export default function Layout({ children }) {
 
         {isAdmin && (
           <>
-            <button style={{ ...S.navItem, ...S.navBtn, ...(isAdminActive ? S.navActive : {}) }}
+            <button data-tour="nav-admin" style={{ ...S.navItem, ...S.navBtn, ...(isAdminActive ? S.navActive : {}) }}
               onClick={() => setAdminOpen(o => !o)}>
               <span style={S.navIcon}>🛠️</span>
               <span style={{ flex:1, textAlign:'left' }}>Quản trị</span>
