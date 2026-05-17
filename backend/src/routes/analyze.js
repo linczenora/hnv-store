@@ -1,241 +1,168 @@
-const router = require('express').Router();
+const Anthropic = require('@anthropic-ai/sdk');
 const path   = require('path');
 const fs     = require('fs');
-const https  = require('https');
 const { pool } = require('../db');
 const { authenticate } = require('../middleware/auth');
+const router = require('express').Router();
 
-// Thư viện đọc Word và Excel
 let mammoth, XLSX;
-try { mammoth = require('mammoth'); } catch(e) { console.warn('mammoth not installed'); }
-try { XLSX = require('xlsx'); } catch(e) { console.warn('xlsx not installed'); }
+try { mammoth = require('mammoth'); } catch(e) {}
+try { XLSX = require('xlsx'); } catch(e) {}
 
-// Extract text từ Word (.doc/.docx)
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const MODEL  = 'claude-haiku-4-5';
+
 async function extractWordText(filePath) {
-  if (!mammoth) throw new Error('Thư viện mammoth chưa cài');
-  const result = await mammoth.extractRawText({ path: filePath });
-  return result.value?.slice(0, 60000) || '';
+  if (mammoth) {
+    try {
+      const result = await mammoth.extractRawText({ path: filePath });
+      const text = result.value?.trim();
+      if (text && text.length > 10) return text.slice(0, 30000);
+    } catch(e) {}
+  }
+  try {
+    const WordExtractor = require('word-extractor');
+    const extractor = new WordExtractor();
+    const doc = await extractor.extract(filePath);
+    const text = doc.getBody()?.trim();
+    if (text && text.length > 10) return text.slice(0, 30000);
+  } catch(e) {}
+  throw new Error('Không đọc được file Word');
 }
 
-// Extract text từ Excel (.xls/.xlsx)
 function extractExcelText(filePath) {
-  if (!XLSX) throw new Error('Thư viện xlsx chưa cài');
+  if (!XLSX) throw new Error('xlsx chưa cài');
   const wb = XLSX.readFile(filePath);
   let text = '';
-  wb.SheetNames.forEach(sheetName => {
-    const ws = wb.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_csv(ws);
-    text += `\n=== Sheet: ${sheetName} ===\n${rows}`;
+  wb.SheetNames.forEach(name => {
+    text += `\n=== Sheet: ${name} ===\n${XLSX.utils.sheet_to_csv(wb.Sheets[name])}`;
   });
-  return text.slice(0, 60000);
+  return text.slice(0, 30000);
 }
 
-// Extract text từ PowerPoint (.ppt/.pptx) — lấy text từ XML
-function extractPptText(filePath) {
+async function extractPdfText(filePath) {
   try {
-    if (!XLSX) throw new Error('Thư viện xlsx chưa cài');
-    const wb = XLSX.readFile(filePath);
-    // XLSX có thể đọc pptx như zip
-    let text = `[Tệp PowerPoint: ${filePath.split('/').pop()}]\nKhông thể trích xuất nội dung chi tiết từ file PowerPoint.`;
-    return text;
-  } catch(e) {
-    return `[Tệp PowerPoint — không trích xuất được text]`;
-  }
+    const { PDFParse } = require('pdf-parse');
+    const buf = fs.readFileSync(filePath);
+    const parser = new PDFParse({ data: buf });
+    const data = await parser.getText();
+    return data.text?.slice(0, 30000) || '';
+  } catch(e) { return ''; }
 }
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL   = 'gemini-2.5-flash';
-
-// ── Prompts ───────────────────────────────────────────────────────────────────
-const SYSTEM_VI = 'Bạn là chuyên gia phân tích tài liệu. Hãy trả lời HOÀN TOÀN bằng tiếng Việt, kể cả khi tài liệu viết bằng ngôn ngữ khác.';
-const SYSTEM_EN = 'You are a professional document analyst. Respond only in English.';
-
-const PROMPTS = {
-  summary:   (t) => `Tài liệu: "${t}"\n\nHãy tóm tắt nội dung tài liệu này bằng tiếng Việt theo cấu trúc:\n1. Mục đích / Chủ đề chính\n2. Nội dung tóm tắt (3-5 câu)\n3. Kết luận hoặc điểm đáng chú ý`,
-  detail:    (t) => `Tài liệu: "${t}"\n\nHãy phân tích chi tiết bằng tiếng Việt:\n1. Tổng quan và mục đích\n2. Cấu trúc nội dung\n3. Các luận điểm / số liệu / thông tin chính\n4. Nhận xét chất lượng\n5. Kết luận`,
-  keypoints: (t) => `Tài liệu: "${t}"\n\nHãy liệt kê các điểm quan trọng nhất bằng tiếng Việt dạng danh sách bullet, mỗi điểm là một ý cần ghi nhớ.`,
-  questions: (t) => `Tài liệu: "${t}"\n\nDựa trên nội dung, hãy tạo 5 câu hỏi kiểm tra hiểu biết và trả lời từng câu. Viết bằng tiếng Việt.`,
-  translate: (t) => `Document: "${t}"\n\nProvide an English summary:\n1. Main topic and purpose\n2. Key content (3-5 sentences)\n3. Important conclusions`,
-};
-
-const MIME_MAP = {
-  pdf:  'application/pdf',
-  png:  'image/png',
-  jpg:  'image/jpeg', jpeg: 'image/jpeg',
-  webp: 'image/webp', gif: 'image/gif',
-};
-
-// ── Gọi Gemini API ────────────────────────────────────────────────────────────
-function callGeminiAPI(parts, systemInstruction) {
-  return new Promise((resolve, reject) => {
-    const payload = JSON.stringify({
-      system_instruction: { parts: [{ text: systemInstruction }] },
-      contents: [{ role: 'user', parts }],
-      generationConfig: {
-        maxOutputTokens: 8192,
-        temperature: 0.3,
-      },
-    });
-
-    const req = https.request({
-      hostname: 'generativelanguage.googleapis.com',
-      path: `/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      method: 'POST',
-      timeout: 120000, // 2 phút timeout
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload),
-      },
-    }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (res.statusCode !== 200) {
-            const msg = parsed?.error?.message || `Gemini API lỗi ${res.statusCode}`;
-            return reject(new Error(msg));
-          }
-          // Lấy toàn bộ text từ tất cả parts
-          const candidate = parsed?.candidates?.[0];
-          const finishReason = candidate?.finishReason;
-          const text = candidate?.content?.parts
-            ?.map(p => p.text || '').join('') || '';
-
-          // Nếu bị cắt do MAX_TOKENS — vẫn trả về phần đã có + ghi chú
-          if (finishReason === 'MAX_TOKENS' && text) {
-            return resolve(text + '\n\n_(Lưu ý: Nội dung dài, kết quả có thể chưa đầy đủ. Thử chọn chế độ "Tóm tắt nội dung" để có kết quả gọn hơn.)_');
-          }
-          if (!text) {
-            const reason = finishReason || 'UNKNOWN';
-            return reject(new Error(`Gemini không trả về nội dung (finishReason: ${reason})`));
-          }
-          resolve(text);
-        } catch (e) {
-          reject(new Error('Lỗi parse response từ Gemini: ' + e.message));
-        }
-      });
-    });
-
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('Quá thời gian chờ (120s). File quá lớn, vui lòng thử lại.'));
-    });
-    req.on('error', reject);
-    req.write(payload);
-    req.end();
+async function callClaudeText(prompt, text) {
+  const message = await client.messages.create({
+    model: MODEL,
+    max_tokens: 2048,
+    messages: [{
+      role: 'user',
+      content: `${prompt}\n\n--- Nội dung tài liệu ---\n${text}`
+    }]
   });
+  return message.content[0]?.text || '';
 }
 
-// GET /api/analyze/models — kiểm tra model nào available với API key hiện tại
-router.get('/models', async (req, res) => {
-  if (!GEMINI_API_KEY) return res.status(503).json({ error: 'Chưa có GEMINI_API_KEY' });
-  const https = require('https');
-  let data = '';
-  https.get(
-    `https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`,
-    (r) => {
-      r.on('data', c => data += c);
-      r.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          const names = (parsed.models || [])
-            .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-            .map(m => m.name);
-          res.json({ available_models: names });
-        } catch { res.status(500).json({ error: 'Parse lỗi', raw: data.slice(0, 500) }); }
-      });
-    }
-  ).on('error', e => res.status(500).json({ error: e.message }));
-});
+async function callClaudeImage(prompt, base64data, mimeType) {
+  const message = await client.messages.create({
+    model: MODEL,
+    max_tokens: 2048,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64data } },
+        { type: 'text', text: prompt }
+      ]
+    }]
+  });
+  return message.content[0]?.text || '';
+}
 
-// ── POST /api/analyze ─────────────────────────────────────────────────────────
+const MIME_MAP = { png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', webp:'image/webp' };
+
+const MODES = {
+  summary:   { prompt: 'Hãy tóm tắt ngắn gọn các điểm chính của tài liệu này trong 200-300 từ. Trả lời bằng tiếng Việt.' },
+  detail:    { prompt: 'Hãy phân tích chi tiết tài liệu: cấu trúc, luận điểm chính, số liệu quan trọng và kết luận. Trả lời bằng tiếng Việt.' },
+  keypoints: { prompt: 'Liệt kê các điểm cốt lõi quan trọng nhất cần chú ý trong tài liệu này (dạng danh sách). Trả lời bằng tiếng Việt.' },
+  questions: { prompt: 'Dựa vào nội dung tài liệu, hãy tạo ra 5 câu hỏi quan trọng và trả lời chi tiết từng câu. Trả lời bằng tiếng Việt.' },
+  translate: { prompt: 'Please summarize the content of this document in English in 200-300 words.' },
+};
+
+const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
+
 router.post('/', authenticate, async (req, res) => {
-  // Tăng timeout lên 90 giây cho tài liệu lớn
-  req.socket.setTimeout(90000);
+  req.setTimeout(90000);
   res.setTimeout(90000);
 
   const { document_id, mode = 'summary' } = req.body;
-
-  if (!GEMINI_API_KEY) {
-    return res.status(503).json({
-      error: 'Chưa cấu hình GEMINI_API_KEY trong file .env của backend.'
-    });
-  }
   if (!document_id) return res.status(400).json({ error: 'Thiếu document_id' });
 
+  const modeConfig = MODES[mode];
+  if (!modeConfig) return res.status(400).json({ error: 'Mode không hợp lệ' });
+
   try {
-    // Lấy thông tin tài liệu
     const { rows } = await pool.query(
-      'SELECT * FROM documents WHERE id = $1 AND is_deleted = false',
-      [document_id]
+      'SELECT * FROM documents WHERE id=$1 AND is_deleted=false', [document_id]
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Tài liệu không tồn tại' });
+    if (!rows[0]) return res.status(404).json({ error: 'Không tìm thấy tài liệu' });
 
-    const doc      = rows[0];
-    const ft       = doc.file_type?.toLowerCase();
-    const prompt   = (PROMPTS[mode] || PROMPTS.summary)(doc.title);
-    const system   = mode === 'translate' ? SYSTEM_EN : SYSTEM_VI;
-    const uploadDir = process.env.UPLOAD_DIR || './uploads';
-    const filePath  = path.resolve(uploadDir, doc.file_path);
+    const doc = rows[0];
+    const filePath = path.resolve(UPLOAD_DIR, doc.file_path);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File không tồn tại trên server' });
 
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File không tồn tại trên server' });
-    }
+    const ft = doc.file_type?.toLowerCase();
+    const { prompt } = modeConfig;
+    let result = '';
 
-    let parts;
+    if (['png','jpg','jpeg','webp'].includes(ft)) {
+      const base64data = fs.readFileSync(filePath).toString('base64');
+      result = await callClaudeImage(prompt, base64data, MIME_MAP[ft]);
 
-    if (['txt', 'csv', 'md'].includes(ft)) {
-      // Text file — đọc nội dung
-      const content = fs.readFileSync(filePath, 'utf8').slice(0, 60000);
-      parts = [{ text: `${prompt}\n\n--- Nội dung tài liệu ---\n${content}` }];
+    } else if (ft === 'pdf') {
+      const text = await extractPdfText(filePath);
+      if (text.trim().length > 100) {
+        result = await callClaudeText(prompt, text);
+      } else {
+        // PDF scan → gửi như ảnh (Claude hỗ trợ PDF base64)
+        const base64data = fs.readFileSync(filePath).toString('base64');
+        const message = await client.messages.create({
+          model: MODEL,
+          max_tokens: 2048,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64data } },
+              { type: 'text', text: prompt }
+            ]
+          }]
+        });
+        result = message.content[0]?.text || '';
+      }
 
-    } else if (MIME_MAP[ft]) {
-      // PDF hoặc ảnh — gửi base64
-      const fileBuffer = fs.readFileSync(filePath);
-      const base64data = fileBuffer.toString('base64');
-      parts = [
-        { inline_data: { mime_type: MIME_MAP[ft], data: base64data } },
-        { text: prompt },
-      ];
+    } else if (['doc','docx'].includes(ft)) {
+      const text = await extractWordText(filePath);
+      result = await callClaudeText(prompt, text);
 
-    } else if (['doc', 'docx'].includes(ft)) {
-      // Word — extract text rồi gửi
-      const content = await extractWordText(filePath);
-      if (!content.trim()) return res.status(400).json({ error: 'Không đọc được nội dung file Word' });
-      parts = [{ text: `${prompt}\n\n--- Nội dung tài liệu Word ---\n${content}` }];
+    } else if (['xls','xlsx'].includes(ft)) {
+      const text = extractExcelText(filePath);
+      result = await callClaudeText(prompt, text);
 
-    } else if (['xls', 'xlsx'].includes(ft)) {
-      // Excel — extract text rồi gửi
-      const content = extractExcelText(filePath);
-      if (!content.trim()) return res.status(400).json({ error: 'Không đọc được nội dung file Excel' });
-      parts = [{ text: `${prompt}\n\n--- Dữ liệu bảng tính Excel ---\n${content}` }];
-
-    } else if (['ppt', 'pptx'].includes(ft)) {
-      // PowerPoint — thông báo hạn chế
-      const content = extractPptText(filePath);
-      parts = [{ text: `${prompt}\n\n${content}` }];
+    } else if (['txt','csv','md'].includes(ft)) {
+      const text = fs.readFileSync(filePath, 'utf8').slice(0, 30000);
+      result = await callClaudeText(prompt, text);
 
     } else {
-      return res.status(400).json({
-        error: `Định dạng .${ft} chưa được hỗ trợ. Hỗ trợ: PDF, Word, Excel, ảnh (PNG/JPG), TXT, CSV`
-      });
+      return res.status(400).json({ error: `Định dạng .${ft} chưa được hỗ trợ` });
     }
 
-    const result = await callGeminiAPI(parts, system);
-
-    // Ghi log
     await pool.query(
-      `INSERT INTO activity_logs (user_id, document_id, action, details)
-       VALUES ($1, $2, 'view', $3)`,
-      [req.user.id, document_id, JSON.stringify({ action: 'analyze', mode })]
+      `INSERT INTO activity_logs(user_id,document_id,action,details) VALUES($1,$2,'analyze',$3)`,
+      [req.user.id, document_id, JSON.stringify({ mode })]
     );
 
-    res.json({ result, mode, document_id });
-
-  } catch (err) {
-    console.error('[Analyze Gemini]', err.message);
-    res.status(500).json({ error: err.message || 'Lỗi phân tích tài liệu' });
+    res.json({ result, mode, document_title: doc.title });
+  } catch(err) {
+    console.error('[Analyze Claude]', err.message);
+    res.status(500).json({ error: err.message || 'Lỗi phân tích' });
   }
 });
 

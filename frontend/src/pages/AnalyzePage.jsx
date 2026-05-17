@@ -126,7 +126,8 @@ export default function AnalyzePage() {
   const [result,      setResult]      = useState('');
   const [error,       setError]       = useState('');
   const [copied,      setCopied]      = useState(false);
-  const [history,     setHistory]     = useState([]); // [{doc, mode, result, time}]
+  const [history,     setHistory]     = useState([]);
+  const [showConfirm, setShowConfirm] = useState(false);
   const resultRef = useRef(null);
 
   useEffect(() => {
@@ -141,8 +142,13 @@ export default function AnalyzePage() {
     return matchSearch && matchFolder && supported;
   });
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = () => {
     if (!selectedDoc) return setError('Vui lòng chọn tài liệu');
+    setShowConfirm(true);
+  };
+
+  const handleConfirmAnalyze = async () => {
+    setShowConfirm(false);
     setError(''); setResult(''); setLoading(true);
 
     try {
@@ -173,7 +179,27 @@ export default function AnalyzePage() {
   const fi = selectedDoc ? SUPPORTED_TYPES[selectedDoc.file_type?.toLowerCase()] : null;
   const selectedMode = MODES.find(m => m.key === mode);
 
+
+  const ConfirmPopup = () => (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999}}>
+      <div style={{background:'#fff',borderRadius:16,padding:'32px 28px',maxWidth:380,width:'90%',boxShadow:'0 20px 60px rgba(0,0,0,0.2)',textAlign:'center'}}>
+        <div style={{fontSize:40,marginBottom:12}}>💳</div>
+        <h3 style={{margin:'0 0 10px',fontSize:18,color:'#1e293b'}}>Xác nhận phân tích</h3>
+        <p style={{margin:'0 0 24px',color:'#64748b',fontSize:14,lineHeight:1.6}}>
+          Lượt phân tích này sẽ tốn khoảng <strong style={{color:'#7c3aed'}}>$0.01 USD</strong>.<br/>
+          Bạn có muốn tiếp tục không?
+        </p>
+        <div style={{display:'flex',gap:12,justifyContent:'center'}}>
+          <button onClick={()=>setShowConfirm(false)} style={{padding:'10px 24px',borderRadius:8,border:'1.5px solid #e2e8f0',background:'#fff',color:'#64748b',cursor:'pointer',fontSize:14,fontWeight:500}}>Không đồng ý</button>
+          <button onClick={handleConfirmAnalyze} style={{padding:'10px 24px',borderRadius:8,border:'none',background:'linear-gradient(135deg,#7c3aed,#6d28d9)',color:'#fff',cursor:'pointer',fontSize:14,fontWeight:600,boxShadow:'0 4px 12px rgba(124,58,237,0.3)'}}>✨ Đồng ý</button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
+    <>
+    {showConfirm && <ConfirmPopup />}
     <div style={S.page}>
 
       {/* ── Header ── */}
@@ -368,6 +394,7 @@ export default function AnalyzePage() {
         }
       `}</style>
     </div>
+    </>
   );
 }
 
